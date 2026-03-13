@@ -3,7 +3,6 @@ const http = require("http");
 
 require("dotenv").config();
 
-// --- Config ---
 const app = new App({
   token: process.env.SLACK_BOT_TOKEN,
   signingSecret: process.env.SLACK_SIGNING_SECRET,
@@ -11,9 +10,7 @@ const app = new App({
   appToken: process.env.SLACK_APP_TOKEN,
 });
 
-const CLAY_WEBHOOK_URL = process.env.CLAY_WEBHOOK_URL; // Your Clay table webhook URL (acts as auth)
-
-// --- Helpers ---
+const CLAY_WEBHOOK_URL = process.env.CLAY_WEBHOOK_URL; 
 
 function extractLinkedInUrl(text) {
   const pattern = /https?:\/\/(www\.)?linkedin\.com\/in\/[a-zA-Z0-9_-]+\/?/i;
@@ -22,23 +19,6 @@ function extractLinkedInUrl(text) {
 }
 
 async function sendToClay(linkedinUrl, channel, threadTs, user) {
-  // Sends the LinkedIn URL + Slack context to Clay's webhook.
-  // Clay enriches the phone number, then uses its "HTTP API" enrichment
-  // to POST back to our callback server (not directly to Slack).
-  //
-  // For the Clay "HTTP API" enrichment, configure it as:
-  //   Method: POST
-  //   URL: https://<YOUR_PUBLIC_URL>/clay-callback
-  //   Headers:
-  //     Content-Type: application/json
-  //   Body (JSON):
-  //     {
-  //       "channel": {{channel}},
-  //       "thread_ts": {{thread_ts}},
-  //       "user": {{user}},
-  //       "phone_number": {{phone_number_column}},
-  //       "name": {{name_column}}
-  //     }
 
   const response = await fetch(CLAY_WEBHOOK_URL, {
     method: "POST",
@@ -62,11 +42,7 @@ async function sendToClay(linkedinUrl, channel, threadTs, user) {
   console.log("Clay webhook acknowledged:", JSON.stringify(data, null, 2));
 }
 
-// --- Clay Callback Server ---
-// Clay's HTTP API enrichment will POST the enriched data here.
-// This server receives it and posts to Slack.
-
-const CALLBACK_PORT = process.env.PORT || process.env.CALLBACK_PORT || 3333;
+const CALLBACK_PORT = process.env.PORT || 3333;
 
 const callbackServer = http.createServer(async (req, res) => {
   if (req.method === "POST" && req.url === "/clay-callback") {
@@ -117,8 +93,6 @@ const callbackServer = http.createServer(async (req, res) => {
   }
 });
 
-// --- Bot Logic ---
-
 app.event("app_mention", async ({ event, client, say }) => {
   const { text, channel, ts, user } = event;
   if (event) {
@@ -126,19 +100,17 @@ app.event("app_mention", async ({ event, client, say }) => {
   } else {
     console.log(`Received mention with no event data. Raw payload: ${JSON.stringify(event)}`);
   }
-  // Extract LinkedIn URL from the message
   const linkedinUrl = extractLinkedInUrl(text);
 
   if (!linkedinUrl) {
     await client.chat.postMessage({
       channel,
-      thread_ts: ts, // reply in thread
+      thread_ts: ts, 
       text: `Hey <@${user}>, I couldn't find a LinkedIn profile URL in your message. Send me something like: @bot https://linkedin.com/in/someperson`,
     });
     return;
   }
 
-  // Acknowledge the request
   await client.chat.postMessage({
     channel,
     thread_ts: ts,
@@ -146,8 +118,6 @@ app.event("app_mention", async ({ event, client, say }) => {
   });
 
   try {
-    // Send to Clay — Clay will enrich and post the result back to this thread
-    // via its HTTP API enrichment action calling Slack's chat.postMessage
     await sendToClay(linkedinUrl, channel, ts, user);
     console.log("Sent to Clay successfully. Waiting for Clay to post back.");
   } catch (err) {
@@ -160,7 +130,6 @@ app.event("app_mention", async ({ event, client, say }) => {
   }
 });
 
-// --- Start ---
 
 (async () => {
   await app.start();
